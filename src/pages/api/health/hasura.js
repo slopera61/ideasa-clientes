@@ -1,26 +1,6 @@
-import crypto from 'crypto'
-
 import { allowMethods } from '../../../lib/server/api'
-import { getEnv, isProduction } from '../../../lib/server/env'
-
-function safeEqual(left, right) {
-  const leftBuffer = Buffer.from(String(left || ''))
-  const rightBuffer = Buffer.from(String(right || ''))
-
-  if (leftBuffer.length !== rightBuffer.length) return false
-
-  return crypto.timingSafeEqual(leftBuffer, rightBuffer)
-}
-
-function isAuthorized(req) {
-  const expectedToken = getEnv('HEALTHCHECK_TOKEN')
-
-  if (!expectedToken) return !isProduction()
-
-  const providedToken = req.headers['x-healthcheck-token'] || req.query.token
-
-  return safeEqual(providedToken, expectedToken)
-}
+import { getEnv } from '../../../lib/server/env'
+import { isHealthcheckAuthorized } from '../../../lib/server/healthcheck'
 
 function endpointHost(endpoint) {
   try {
@@ -40,7 +20,7 @@ function errorCode(error) {
 export default async function handler(req, res) {
   if (!allowMethods(req, res, ['GET'])) return
 
-  if (!isAuthorized(req)) {
+  if (!isHealthcheckAuthorized(req)) {
     res.status(404).json({ error: 'No encontrado.' })
 
     return
