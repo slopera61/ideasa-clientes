@@ -12,6 +12,7 @@ const navItems = [
 
 export default function PortalLayout({ title, session, children }) {
   const router = useRouter()
+  const sessionName = session?.nombre || session?.empresaNombre || session?.documento || 'Cliente'
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -61,8 +62,8 @@ export default function PortalLayout({ title, session, children }) {
             </div>
             <div className="portal-header-actions">
               <div className="session-box">
-                <span className="avatar-initial mini">{(session?.nombre || 'C').slice(0, 1)}</span>
-                <span>{session?.documento || 'Cliente'}</span>
+                <span className="avatar-initial mini">{sessionName.slice(0, 1)}</span>
+                <span className="session-name">{sessionName}</span>
               </div>
               <button type="button" className="ghost-button" onClick={logout}>
                 Salir

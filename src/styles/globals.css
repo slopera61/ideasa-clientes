@@ -660,6 +660,14 @@ select:focus {
   font-weight: 800;
 }
 
+.session-name {
+  display: inline-block;
+  max-width: min(240px, 34vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .portal-main,
 .admin-shell {
   width: min(1440px, calc(100% - 48px));
