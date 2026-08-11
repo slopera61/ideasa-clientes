@@ -29,6 +29,7 @@ next-dev*.log
 .env
 .env.*
 !.env.example
+apollo-client.js
 
 # vercel
 .vercel
