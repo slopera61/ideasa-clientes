@@ -1,53 +1,65 @@
-import { ApolloClient, HttpLink, InMemoryCache, gql } from '@apollo/client/core'
+import { ApolloClient, InMemoryCache, HttpLink, split } from '@apollo/client'
+import { GraphQLWsLink } from '@apollo/client/link/subscriptions'
+import { createClient } from 'graphql-ws'
+import { getMainDefinition } from '@apollo/client/utilities'
+import { persistCache, LocalStorageWrapper } from 'apollo3-cache-persist'
 
-function requireServerEnv(name) {
-  const value = process.env[name]
+const cache = new InMemoryCache()
 
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`)
+const httpLink = new HttpLink({
+  uri: 'https://pinturasidea.com/v1/graphql',
+  headers: {
+    'x-hasura-admin-secret': 'ideasasecret2023/*.secret'
   }
+})
 
-  return value
-}
+const wsLink =
+  typeof window !== 'undefined'
+    ? new GraphQLWsLink(
+        createClient({
+          url: 'ws://79.125.59.101:8080/v1/graphql',
+          connectionParams: {
+            headers: {
+              'x-hasura-admin-secret': 'ideasasecret2023/*.secret'
+            }
+          }
+        })
+      )
+    : null
 
-export function createHasuraApolloClient() {
-  const endpoint = requireServerEnv('HASURA_GRAPHQL_ENDPOINT')
-  const adminSecret = requireServerEnv('HASURA_ADMIN_SECRET')
+const splitLink =
+  typeof window !== 'undefined' && wsLink != null
+    ? split(
+        ({ query }) => {
+          const definition = getMainDefinition(query)
 
-  return new ApolloClient({
-    ssrMode: true,
-    link: new HttpLink({
-      uri: endpoint,
-      fetch,
-      headers: {
-        'x-hasura-admin-secret': adminSecret
-      }
-    }),
-    cache: new InMemoryCache(),
-    defaultOptions: {
-      query: {
-        fetchPolicy: 'no-cache'
-      }
+          return definition.kind === 'OperationDefinition' && definition.operation === 'subscription'
+        },
+        wsLink,
+        httpLink
+      )
+    : httpLink
+
+// ** Función asincrónica para persistir el caché
+const persistCacheAsync = async () => {
+  try {
+    if (typeof window !== 'undefined') {
+      // Código que utiliza window.localStorage
+      await persistCache({
+        cache,
+        storage: new LocalStorageWrapper(window.localStorage)
+      })
     }
-  })
-}
-
-export async function runHasuraApolloHealthcheck() {
-  const client = createHasuraApolloClient()
-  const startedAt = Date.now()
-  const result = await client.query({
-    query: gql`
-      query ApolloHealthcheck {
-        __typename
-      }
-    `
-  })
-
-  return {
-    ok: result.data?.__typename === 'query_root',
-    typename: result.data?.__typename || '',
-    latencyMs: Date.now() - startedAt
+  } catch (error) {
+    console.error('Error persisting cache:', error)
   }
 }
 
-export default createHasuraApolloClient
+persistCacheAsync()
+
+const client = new ApolloClient({
+  link: splitLink,
+  cache
+})
+
+export default client
