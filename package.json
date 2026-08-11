@@ -9,6 +9,8 @@
     "lint": "eslint \"src/**/*.{js,jsx}\""
   },
   "dependencies": {
+    "@apollo/client": "^4.2.10",
+    "graphql": "^17.0.2",
     "next": "^16.2.11",
     "nodemailer": "^9.0.3",
     "react": "18.2.0",
