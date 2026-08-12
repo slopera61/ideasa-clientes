@@ -311,7 +311,7 @@ export async function insertAccessCode({ codCliente, documento, emailDestino, ot
 export async function getLatestAccessCode(documento) {
   const data = await hasuraRequest(
     `
-      query GetLatestAccessCode($documento: String!, $now: timestamptz!) {
+      query GetLatestAccessCode($documento: String!, $now: datetimeoffset!) {
         cliente_codigos_acceso(
           where: {
             documento: { _eq: $documento }
@@ -340,7 +340,7 @@ export async function getLatestAccessCode(documento) {
 export async function incrementAccessCodeAttempts(id) {
   await hasuraRequest(
     `
-      mutation IncrementAccessCodeAttempts($id: uuid!) {
+      mutation IncrementAccessCodeAttempts($id: uniqueidentifier!) {
         update_cliente_codigos_acceso_by_pk(
           pk_columns: { id: $id }
           _inc: { intentos: 1 }
@@ -356,7 +356,7 @@ export async function incrementAccessCodeAttempts(id) {
 export async function markAccessCodeUsed(id) {
   await hasuraRequest(
     `
-      mutation MarkAccessCodeUsed($id: uuid!, $usedAt: timestamptz!) {
+      mutation MarkAccessCodeUsed($id: uniqueidentifier!, $usedAt: datetimeoffset!) {
         update_cliente_codigos_acceso_by_pk(
           pk_columns: { id: $id }
           _set: { usado: true, usado_en: $usedAt }

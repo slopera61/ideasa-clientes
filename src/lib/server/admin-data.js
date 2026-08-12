@@ -96,7 +96,7 @@ export async function insertAdminAccessCode({ codVendedor, emailDestino, otpHash
 export async function getLatestAdminAccessCode(email) {
   const data = await hasuraRequest(
     `
-      query GetLatestAdminAccessCode($email: String!, $now: timestamptz!) {
+      query GetLatestAdminAccessCode($email: String!, $now: datetimeoffset!) {
         admin_codigos_acceso(
           where: {
             email_destino: { _eq: $email }
@@ -124,7 +124,7 @@ export async function getLatestAdminAccessCode(email) {
 export async function incrementAdminAccessCodeAttempts(id) {
   await hasuraRequest(
     `
-      mutation IncrementAdminAccessCodeAttempts($id: uuid!) {
+      mutation IncrementAdminAccessCodeAttempts($id: uniqueidentifier!) {
         update_admin_codigos_acceso_by_pk(
           pk_columns: { id: $id }
           _inc: { intentos: 1 }
@@ -140,7 +140,7 @@ export async function incrementAdminAccessCodeAttempts(id) {
 export async function markAdminAccessCodeUsed(id) {
   await hasuraRequest(
     `
-      mutation MarkAdminAccessCodeUsed($id: uuid!, $usedAt: timestamptz!) {
+      mutation MarkAdminAccessCodeUsed($id: uniqueidentifier!, $usedAt: datetimeoffset!) {
         update_admin_codigos_acceso_by_pk(
           pk_columns: { id: $id }
           _set: { usado: true, usado_en: $usedAt }
