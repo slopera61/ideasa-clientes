@@ -10,6 +10,10 @@ export const ELECTRONIC_INVOICE_COMPANIES = [
 const DEFAULT_TIMEOUT_MS = 15000
 const TOKEN_VERSION = 1
 const DOWNLOAD_TOKEN_TTL_MS = 30 * 60 * 1000
+const THEFACTORY_DEFAULT_SOAP_URLS = {
+  demo: 'https://demoemision21v4.thefactoryhka.com.co/ws/v1.0/Service.svc',
+  production: 'https://emision21v4.thefactoryhka.com.co/ws/v1.0/Service.svc'
+}
 
 export class PublicInvoiceError extends Error {
   constructor(message, status = 400) {
@@ -238,6 +242,318 @@ function filenameFromDisposition(disposition) {
   return match?.[1] || ''
 }
 
+function xmlEscape(value) {
+  return cleanText(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function xmlDecode(value) {
+  return cleanText(value)
+    .replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/i, '$1')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
+function localElementValues(xml, localName) {
+  const values = []
+  const pattern = new RegExp(`<(?:[\\w.-]+:)?${localName}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?${localName}>`, 'gi')
+  let match = pattern.exec(xml)
+
+  while (match) {
+    values.push(xmlDecode(match[1]))
+    match = pattern.exec(xml)
+  }
+
+  return values
+}
+
+function firstLocalElementValue(xml, localNames) {
+  const names = Array.isArray(localNames) ? localNames : [localNames]
+
+  for (const localName of names) {
+    const value = localElementValues(xml, localName).find(Boolean)
+
+    if (value) return value
+  }
+
+  return ''
+}
+
+function firstLocalElementSegment(xml, localName) {
+  return firstLocalElementValue(xml, localName)
+}
+
+function normalizeTheFactoryEnvironment() {
+  const env = cleanText(getEnv('THEFACTORY_ENV', 'production')).toLowerCase()
+
+  return ['demo', 'test', 'testing', 'prueba', 'pruebas'].includes(env) ? 'demo' : 'production'
+}
+
+function normalizeSoapUrl(rawUrl) {
+  const value = cleanText(rawUrl)
+
+  if (!value) return ''
+
+  try {
+    const url = new URL(value)
+    const search = url.search.toLowerCase()
+
+    if (search === '?wsdl' || search === '?singlewsdl') {
+      url.search = ''
+    }
+
+    return url.toString().replace(/\/$/, '')
+  } catch (error) {
+    return value.replace(/\?(single)?wsdl$/i, '').replace(/\/$/, '')
+  }
+}
+
+function theFactoryConfig(empresa) {
+  const environment = normalizeTheFactoryEnvironment()
+  const soapUrl =
+    normalizeSoapUrl(
+      getEnv(environment === 'demo' ? 'THEFACTORY_SOAP_URL_DEMO' : 'THEFACTORY_SOAP_URL_PROD')
+    ) || THEFACTORY_DEFAULT_SOAP_URLS[environment]
+  const tokenEmpresa = getEnv(`THEFACTORY_TOKEN_EMPRESA_${empresa}`)
+  const tokenPassword = getEnv(`THEFACTORY_TOKEN_PASSWORD_${empresa}`)
+
+  return {
+    configured: Boolean(soapUrl && tokenEmpresa && tokenPassword),
+    environment,
+    soapUrl,
+    tokenEmpresa,
+    tokenPassword,
+    timeoutMs: Number(getEnv('THEFACTORY_TIMEOUT_MS')) || DEFAULT_TIMEOUT_MS
+  }
+}
+
+function theFactoryDocumentId(lookup) {
+  return normalizeDocument(lookup?.referencia || `${lookup?.prefijo || ''}${lookup?.consecutivo || ''}`)
+}
+
+function buildTheFactoryEnvelope(method, { tokenEmpresa, tokenPassword, documento }) {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <tem:${method}>
+      <tem:tokenEmpresa>${xmlEscape(tokenEmpresa)}</tem:tokenEmpresa>
+      <tem:tokenPassword>${xmlEscape(tokenPassword)}</tem:tokenPassword>
+      <tem:documento>${xmlEscape(documento)}</tem:documento>
+    </tem:${method}>
+  </soapenv:Body>
+</soapenv:Envelope>`
+}
+
+function parseTheFactorySoapResponse(method, xml) {
+  const fault = firstLocalElementValue(xml, ['faultstring', 'Text'])
+
+  if (fault) {
+    throw new Error(fault)
+  }
+
+  const result = firstLocalElementSegment(xml, `${method}Result`) || xml
+
+  return {
+    codigo: Number(firstLocalElementValue(result, 'codigo')) || 0,
+    cufe: firstLocalElementValue(result, 'cufe'),
+    documento: firstLocalElementValue(result, 'documento'),
+    hash: firstLocalElementValue(result, 'hash'),
+    mensaje: firstLocalElementValue(result, 'mensaje'),
+    nombre: firstLocalElementValue(result, 'nombre'),
+    resultado: firstLocalElementValue(result, 'resultado'),
+    tipoCufe: firstLocalElementValue(result, 'tipoCufe')
+  }
+}
+
+async function callTheFactorySoap(method, lookup) {
+  const config = theFactoryConfig(lookup.empresa)
+
+  if (!config.configured) return null
+
+  const documento = theFactoryDocumentId(lookup)
+
+  if (!documento) {
+    throw new PublicInvoiceError('Indica el prefijo y consecutivo completo de la factura.')
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs)
+
+  try {
+    const response = await fetch(config.soapUrl, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'content-type': 'text/xml; charset=utf-8',
+        soapaction: `"http://tempuri.org/IService/${method}"`
+      },
+      body: buildTheFactoryEnvelope(method, {
+        tokenEmpresa: config.tokenEmpresa,
+        tokenPassword: config.tokenPassword,
+        documento
+      })
+    })
+    const responseText = await response.text()
+
+    if (!response.ok) {
+      throw new Error(`TheFactoryHKA respondio con estado HTTP ${response.status}.`)
+    }
+
+    const result = parseTheFactorySoapResponse(method, responseText)
+    const status = cleanText(result.resultado).toLowerCase()
+
+    if (status === 'error' || !result.documento) {
+      throw new PublicInvoiceError(result.mensaje || 'No encontramos el documento en TheFactoryHKA.', 404)
+    }
+
+    return result
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('TheFactoryHKA tardo demasiado en responder.')
+    }
+
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function decodeTheFactoryDocument(base64Document) {
+  const base64 = cleanText(base64Document).replace(/\s+/g, '')
+  const buffer = Buffer.from(base64, 'base64')
+
+  if (!base64 || buffer.length === 0) {
+    throw new PublicInvoiceError('TheFactoryHKA no retorno un documento valido.', 502)
+  }
+
+  return buffer
+}
+
+function customerXmlSegment(xml) {
+  return firstLocalElementSegment(xml, 'AccountingCustomerParty')
+}
+
+function documentMatchesCustomerXml(xml, expectedDocument) {
+  const expected = normalizeDocument(expectedDocument)
+
+  if (!expected) return true
+
+  const segment = customerXmlSegment(xml)
+  const candidates = [
+    ...localElementValues(segment, 'CompanyID'),
+    ...localElementValues(segment, 'CustomerAssignedAccountID'),
+    ...localElementValues(segment, 'ID')
+  ]
+
+  return candidates.some(candidate => {
+    const normalized = normalizeDocument(candidate)
+
+    return (
+      normalized === expected ||
+      (expected.length >= 6 && normalized.includes(expected)) ||
+      (normalized.length >= 6 && expected.includes(normalized))
+    )
+  })
+}
+
+function customerDocumentFromXml(xml, fallback) {
+  const segment = customerXmlSegment(xml)
+  const candidates = [
+    ...localElementValues(segment, 'CompanyID'),
+    ...localElementValues(segment, 'CustomerAssignedAccountID'),
+    ...localElementValues(segment, 'ID')
+  ]
+  const document = candidates.map(normalizeDocument).find(value => value.length >= 6)
+
+  return document || fallback || ''
+}
+
+function customerNameFromXml(xml) {
+  const segment = customerXmlSegment(xml)
+
+  return compact(firstLocalElementValue(segment, ['RegistrationName', 'Name']))
+}
+
+function invoiceTotalFromXml(xml) {
+  const monetaryTotal = firstLocalElementSegment(xml, 'LegalMonetaryTotal') || xml
+  const rawTotal = firstLocalElementValue(monetaryTotal, 'PayableAmount').replace(',', '.')
+  const total = Number(rawTotal)
+
+  return Number.isFinite(total) ? total : 0
+}
+
+function mapTheFactoryXmlResponse(result, lookup, xmlText) {
+  const cufe = result.cufe || firstLocalElementValue(xmlText, 'UUID') || lookup.cufe || ''
+  const normalized = {
+    empresa: lookup.empresa,
+    empresaNombre: lookup.empresaNombre,
+    prefijo: lookup.prefijo,
+    consecutivo: lookup.consecutivo,
+    referencia: lookup.referencia,
+    documento: customerDocumentFromXml(xmlText, lookup.documento),
+    cliente: customerNameFromXml(xmlText) || 'Cliente IDEASA',
+    fecha: firstLocalElementValue(xmlText, 'IssueDate') || '',
+    total: invoiceTotalFromXml(xmlText),
+    moneda: 'COP',
+    estado: 'Disponible',
+    cufe,
+    facturaId: lookup.referencia,
+    integrationPending: false
+  }
+  const token = signInvoiceToken({
+    empresa: normalized.empresa,
+    prefijo: normalized.prefijo,
+    consecutivo: normalized.consecutivo,
+    documento: normalized.documento,
+    cufe: normalized.cufe,
+    facturaId: normalized.facturaId
+  })
+
+  return {
+    ...normalized,
+    token,
+    qrUrl: `${portalUrl()}/facturacion-electronica/factura/${encodeURIComponent(token)}`
+  }
+}
+
+async function searchTheFactoryInvoice(lookup) {
+  const result = await callTheFactorySoap('DescargaXML', lookup)
+
+  if (!result) return null
+
+  const xmlBuffer = decodeTheFactoryDocument(result.documento)
+  const xmlText = xmlBuffer.toString('utf8')
+
+  if (lookup.documento && !documentMatchesCustomerXml(xmlText, lookup.documento)) {
+    throw new PublicInvoiceError('No encontramos una factura para ese documento.', 404)
+  }
+
+  return mapTheFactoryXmlResponse(result, lookup, xmlText)
+}
+
+async function downloadTheFactoryInvoice(invoice, formato) {
+  const method = formato === 'xml' ? 'DescargaXML' : 'DescargaPDF'
+  const result = await callTheFactorySoap(method, invoice)
+
+  if (!result) return null
+
+  const reference = theFactoryDocumentId(invoice)
+
+  return {
+    buffer: decodeTheFactoryDocument(result.documento),
+    contentType: formato === 'xml' ? 'application/xml; charset=utf-8' : 'application/pdf',
+    filename: `factura-electronica-${reference}.${formato}`
+  }
+}
+
 export function normalizeRegistrationRequest(body, meta = {}) {
   const empresa = validateCompany(body?.empresa)
   const documento = normalizeDocument(body?.documento)
@@ -391,6 +707,10 @@ function mockInvoice(lookup) {
 
 export async function searchElectronicInvoice(body, options = {}) {
   const lookup = normalizeInvoiceLookup(body, options)
+  const theFactoryInvoice = await searchTheFactoryInvoice(lookup)
+
+  if (theFactoryInvoice) return theFactoryInvoice
+
   const payload = await fetchJsonFromBillingApi(apiConfig().searchPath, lookup)
 
   if (payload) return mapInvoiceResponse(payload, lookup)
@@ -466,6 +786,10 @@ export async function downloadElectronicInvoice({ token, formato }) {
   if (!['pdf', 'xml'].includes(safeFormat)) {
     throw new PublicInvoiceError('Selecciona un formato de descarga valido.')
   }
+
+  const theFactoryFile = await downloadTheFactoryInvoice(invoiceLookup, safeFormat)
+
+  if (theFactoryFile) return theFactoryFile
 
   const file = await fetchFileFromBillingApi(apiConfig().downloadPath, {
     ...invoiceLookup,
