@@ -367,7 +367,7 @@ export async function getPaymentOrderForClient({ id, codCliente, codClientes }) 
   try {
     data = await hasuraRequest(
       `
-        query GetPaymentOrderForClient($id: uuid!) {
+        query GetPaymentOrderForClient($id: uniqueidentifier!) {
           ordenes_pago_by_pk(id: $id) {
             id
             cod_cliente
@@ -545,7 +545,7 @@ async function getOrderDetails(orderId) {
   try {
     const data = await hasuraRequest(
       `
-        query GetOrderDetails($orderId: uuid!) {
+        query GetOrderDetails($orderId: uniqueidentifier!) {
           ordenes_pago_detalle(where: { orden_pago_id: { _eq: $orderId } }) {
             id
             empresa
@@ -717,7 +717,7 @@ export async function registerApprovedPayment({
 
   await hasuraRequest(
     `
-      mutation MarkOrderPaid($id: uuid!, $updatedAt: timestamptz!) {
+      mutation MarkOrderPaid($id: uniqueidentifier!, $updatedAt: datetimeoffset!) {
         update_ordenes_pago_by_pk(
           pk_columns: { id: $id }
           _set: { estado: "pago_confirmado", actualizado_en: $updatedAt }
