@@ -11,9 +11,119 @@ import { getEnv, portalUrl, requireEnv } from './env'
 import { hasuraRequest } from './hasura'
 
 const WOMPI_COMPANY_CODES = ['002', '003']
+const STATELESS_ORDER_PREFIX = 'stateless-order:'
+
+function base64UrlEncode(value) {
+  return Buffer.from(value).toString('base64url')
+}
+
+function base64UrlDecode(value) {
+  return Buffer.from(value, 'base64url').toString('utf8')
+}
+
+function paymentPersistenceOptional() {
+  return getEnv('PAYMENT_PERSISTENCE_OPTIONAL', 'true') === 'true'
+}
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex')
+}
+
+function signPaymentPayload(payload) {
+  return crypto.createHmac('sha256', requireEnv('CLIENT_SESSION_SECRET')).update(payload).digest('base64url')
+}
+
+function createSignedPaymentToken(data) {
+  const payload = base64UrlEncode(JSON.stringify(data))
+  const signature = signPaymentPayload(payload)
+
+  return `${STATELESS_ORDER_PREFIX}${payload}.${signature}`
+}
+
+function readSignedPaymentToken(token) {
+  const rawToken = String(token || '')
+
+  if (!rawToken.startsWith(STATELESS_ORDER_PREFIX)) return null
+
+  const [payload, signature] = rawToken.slice(STATELESS_ORDER_PREFIX.length).split('.')
+
+  if (!payload || !signature || !constantTimeEqual(signPaymentPayload(payload), signature)) return null
+
+  let data
+
+  try {
+    data = JSON.parse(base64UrlDecode(payload))
+  } catch (error) {
+    return null
+  }
+
+  if (data.type !== 'payment_order' || !data.exp || data.exp < Math.floor(Date.now() / 1000)) return null
+
+  return data
+}
+
+function createStatelessPaymentOrder({ codCliente, documento, invoices, provider, reference, amountInCents }) {
+  const now = new Date().toISOString()
+  const details = invoices.map((invoice, index) => ({
+    id: `stateless-detail-${index + 1}`,
+    orden_pago_id: '',
+    empresa: invoice.empresa,
+    serie: invoice.serie,
+    numero: String(invoice.numero),
+    importe_centavos: invoice.importeCentavos,
+    fecha_vencimiento: invoice.fechaVencimiento
+  }))
+  const token = createSignedPaymentToken({
+    type: 'payment_order',
+    version: 1,
+    exp: Math.floor(Date.now() / 1000) + 30 * 60,
+    codCliente,
+    documento,
+    referencia: reference,
+    totalCentavos: amountInCents,
+    moneda: 'COP',
+    proveedorPreferido: provider,
+    creadoEn: now,
+    details
+  })
+
+  return {
+    id: token,
+    cod_cliente: codCliente,
+    documento,
+    referencia: reference,
+    total_centavos: amountInCents,
+    moneda: 'COP',
+    estado: 'creada_sin_persistencia',
+    proveedor_preferido: provider,
+    creado_en: now,
+    actualizado_en: now,
+    details,
+    persistenceSkipped: true
+  }
+}
+
+function orderFromStatelessToken(token) {
+  const data = readSignedPaymentToken(token)
+
+  if (!data) return null
+
+  const details = Array.isArray(data.details) ? data.details.map(detail => ({ ...detail, orden_pago_id: token })) : []
+
+  return {
+    id: token,
+    cod_cliente: data.codCliente,
+    documento: data.documento,
+    referencia: data.referencia,
+    total_centavos: data.totalCentavos,
+    moneda: data.moneda || 'COP',
+    estado: 'creada_sin_persistencia',
+    proveedor_preferido: data.proveedorPreferido,
+    creado_en: data.creadoEn,
+    actualizado_en: data.creadoEn,
+    details,
+    persistenceSkipped: true
+  }
 }
 
 function constantTimeEqual(a, b) {
@@ -351,7 +461,20 @@ export async function createPaymentOrder({ codCliente, documento, invoices, prov
       invoices
     })
 
-    if (!devOrder) throw error
+    if (!devOrder) {
+      if (!paymentPersistenceOptional()) throw error
+
+      console.warn('Payment order created without persistence', error.message)
+
+      return createStatelessPaymentOrder({
+        codCliente,
+        documento,
+        invoices,
+        provider,
+        reference,
+        amountInCents
+      })
+    }
 
     console.warn('Payment order stored in development memory fallback', error.message)
 
@@ -362,6 +485,15 @@ export async function createPaymentOrder({ codCliente, documento, invoices, prov
 }
 
 export async function getPaymentOrderForClient({ id, codCliente, codClientes }) {
+  const statelessOrder = orderFromStatelessToken(id)
+  const allowedCodClientes = Array.isArray(codClientes) && codClientes.length > 0 ? codClientes : [codCliente]
+
+  if (statelessOrder) {
+    if (!allowedCodClientes.map(String).includes(String(statelessOrder.cod_cliente))) return null
+
+    return statelessOrder
+  }
+
   let data
 
   try {
@@ -392,7 +524,6 @@ export async function getPaymentOrderForClient({ id, codCliente, codClientes }) 
   }
 
   const order = data.ordenes_pago_by_pk
-  const allowedCodClientes = Array.isArray(codClientes) && codClientes.length > 0 ? codClientes : [codCliente]
 
   if (!order || !allowedCodClientes.map(String).includes(String(order.cod_cliente))) return null
 
@@ -490,6 +621,14 @@ export async function getPaymentReceiptByNumber(receiptNumber, codClientes) {
 }
 
 export async function insertPaymentAttempt({ order, provider, checkoutUrl, providerPayload }) {
+  if (order?.persistenceSkipped) {
+    return {
+      id: `stateless-attempt-${Date.now()}`,
+      checkout_url: checkoutUrl,
+      estado: 'iniciado_sin_persistencia'
+    }
+  }
+
   try {
     const data = await hasuraRequest(
       `
@@ -517,7 +656,17 @@ export async function insertPaymentAttempt({ order, provider, checkoutUrl, provi
   } catch (error) {
     const devAttempt = saveDevPaymentAttempt({ order, provider, checkoutUrl, providerPayload })
 
-    if (!devAttempt) throw error
+    if (!devAttempt) {
+      if (!paymentPersistenceOptional()) throw error
+
+      console.warn('Payment attempt created without persistence', error.message)
+
+      return {
+        id: `stateless-attempt-${Date.now()}`,
+        checkout_url: checkoutUrl,
+        estado: 'iniciado_sin_persistencia'
+      }
+    }
 
     console.warn('Payment attempt stored in development memory fallback', error.message)
 
@@ -542,6 +691,10 @@ export async function getPaymentOrderCompanyForWompi(orderId) {
 }
 
 async function getOrderDetails(orderId) {
+  const statelessOrder = orderFromStatelessToken(orderId)
+
+  if (statelessOrder) return statelessOrder.details
+
   try {
     const data = await hasuraRequest(
       `
@@ -589,6 +742,12 @@ export async function recordGatewayEvent({ provider, eventId, headers, payload, 
       }
     )
   } catch (error) {
+    if (paymentPersistenceOptional()) {
+      console.warn('Gateway event received without persistence', error.message)
+
+      return
+    }
+
     if (getDevOrderDetails('health-check') === null) throw error
 
     console.warn('Gateway event skipped in development memory fallback', error.message)
@@ -644,9 +803,39 @@ export async function registerApprovedPayment({
   currency = 'COP',
   rawPayload
 }) {
-  const order = await findPaymentOrderByReference(reference)
+  let order
+
+  try {
+    order = await findPaymentOrderByReference(reference)
+  } catch (error) {
+    if (!paymentPersistenceOptional()) throw error
+
+    console.warn('Approved payment could not be persisted because payment tables are unavailable', {
+      provider,
+      reference,
+      gatewayTransactionId
+    })
+
+    return {
+      id: `stateless-payment-${gatewayTransactionId || Date.now()}`,
+      skippedPersistence: true
+    }
+  }
 
   if (!order) {
+    if (paymentPersistenceOptional()) {
+      console.warn('Approved payment received without a persisted order', {
+        provider,
+        reference,
+        gatewayTransactionId
+      })
+
+      return {
+        id: `stateless-payment-${gatewayTransactionId || Date.now()}`,
+        skippedPersistence: true
+      }
+    }
+
     throw new Error('La referencia de pago no existe.')
   }
 
