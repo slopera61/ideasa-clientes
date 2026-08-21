@@ -9,23 +9,62 @@ import { formatCurrency, formatDate } from '../../lib/format'
 
 export const getServerSideProps = withClientSession()
 
+const DATA_REQUEST_TIMEOUT_MS = 60000
+const DATA_PROGRESS_LIMIT = 95
+
 export default function FacturasPage({ session }) {
   const [profile, setProfile] = useState(null)
   const [invoices, setInvoices] = useState([])
   const [selected, setSelected] = useState({})
   const [provider, setProvider] = useState('wompi')
   const [loading, setLoading] = useState(true)
+  const [loadProgress, setLoadProgress] = useState(0)
   const [payingKey, setPayingKey] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([apiFetch('/api/client/me'), apiFetch('/api/client/invoices')])
+    let active = true
+    const startedAt = Date.now()
+    const progressTimer = setInterval(() => {
+      setLoadProgress(current => {
+        const elapsed = Date.now() - startedAt
+        const nextProgress = 10 + Math.round((elapsed / DATA_REQUEST_TIMEOUT_MS) * 85)
+
+        return Math.max(current, Math.min(DATA_PROGRESS_LIMIT, nextProgress))
+      })
+    }, 700)
+
+    setLoading(true)
+    setLoadProgress(10)
+    setError('')
+
+    Promise.all([
+      apiFetch('/api/client/me', { timeoutMs: DATA_REQUEST_TIMEOUT_MS }),
+      apiFetch('/api/client/invoices', { timeoutMs: DATA_REQUEST_TIMEOUT_MS })
+    ])
       .then(([profilePayload, invoicesPayload]) => {
+        if (!active) return
+
         setProfile(profilePayload)
         setInvoices(invoicesPayload.invoices || [])
       })
-      .catch(requestError => setError(requestError.message))
-      .finally(() => setLoading(false))
+      .catch(requestError => {
+        if (!active) return
+
+        setError(requestError.message)
+      })
+      .finally(() => {
+        if (!active) return
+
+        clearInterval(progressTimer)
+        setLoadProgress(100)
+        setLoading(false)
+      })
+
+    return () => {
+      active = false
+      clearInterval(progressTimer)
+    }
   }, [])
 
   const selectedInvoices = useMemo(() => invoices.filter(invoice => selected[invoice.id]), [invoices, selected])
@@ -168,6 +207,18 @@ export default function FacturasPage({ session }) {
         }
       />
       <Notice type='error'>{error}</Notice>
+      {loading ? (
+        <div className='request-progress data-progress' role='status' aria-live='polite'>
+          <div className='request-progress-header'>
+            <span>Consultando facturas y cartera</span>
+            <strong>{loadProgress}%</strong>
+          </div>
+          <div className='request-progress-track' aria-hidden='true'>
+            <span style={{ width: `${loadProgress}%` }} />
+          </div>
+          <small>Estamos trayendo la información del cliente, facturas pendientes y resumen financiero.</small>
+        </div>
+      ) : null}
       <section className='client-overview panel'>
         <div>
           <span className='avatar-initial large'>{(client?.nombre || session?.nombre || 'C').slice(0, 1)}</span>

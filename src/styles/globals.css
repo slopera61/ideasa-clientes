@@ -632,6 +632,10 @@ select:focus {
   line-height: 1.45;
 }
 
+.data-progress {
+  margin-bottom: 20px;
+}
+
 .portal-shell {
   display: grid;
   min-height: 100vh;

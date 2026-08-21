@@ -9,6 +9,9 @@ import { formatCurrency } from '../../lib/format'
 
 export const getServerSideProps = withClientSession()
 
+const DATA_REQUEST_TIMEOUT_MS = 60000
+const DATA_PROGRESS_LIMIT = 95
+
 function valueOrNA(value) {
   return value === undefined || value === null || value === '' ? 'N/A' : value
 }
@@ -16,12 +19,31 @@ function valueOrNA(value) {
 export default function PerfilPage({ session }) {
   const [profile, setProfile] = useState(null)
   const [form, setForm] = useState({ email: '', telefono: '', direccion: '', mensaje: '' })
+  const [loading, setLoading] = useState(true)
+  const [loadProgress, setLoadProgress] = useState(0)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
-    apiFetch('/api/client/me')
+    let active = true
+    const startedAt = Date.now()
+    const progressTimer = setInterval(() => {
+      setLoadProgress(current => {
+        const elapsed = Date.now() - startedAt
+        const nextProgress = 10 + Math.round((elapsed / DATA_REQUEST_TIMEOUT_MS) * 85)
+
+        return Math.max(current, Math.min(DATA_PROGRESS_LIMIT, nextProgress))
+      })
+    }, 700)
+
+    setLoading(true)
+    setLoadProgress(10)
+    setError('')
+
+    apiFetch('/api/client/me', { timeoutMs: DATA_REQUEST_TIMEOUT_MS })
       .then(payload => {
+        if (!active) return
+
         setProfile(payload)
         setForm({
           email: payload.client?.email || '',
@@ -30,7 +52,23 @@ export default function PerfilPage({ session }) {
           mensaje: ''
         })
       })
-      .catch(requestError => setError(requestError.message))
+      .catch(requestError => {
+        if (!active) return
+
+        setError(requestError.message)
+      })
+      .finally(() => {
+        if (!active) return
+
+        clearInterval(progressTimer)
+        setLoadProgress(100)
+        setLoading(false)
+      })
+
+    return () => {
+      active = false
+      clearInterval(progressTimer)
+    }
   }, [])
 
   async function submit(event) {
@@ -70,6 +108,18 @@ export default function PerfilPage({ session }) {
       />
       <Notice>{message}</Notice>
       <Notice type="error">{error}</Notice>
+      {loading ? (
+        <div className="request-progress data-progress" role="status" aria-live="polite">
+          <div className="request-progress-header">
+            <span>Consultando perfil y resumen financiero</span>
+            <strong>{loadProgress}%</strong>
+          </div>
+          <div className="request-progress-track" aria-hidden="true">
+            <span style={{ width: `${loadProgress}%` }} />
+          </div>
+          <small>Estamos consultando la información registrada del cliente y los datos de cartera disponibles.</small>
+        </div>
+      ) : null}
       <div className="profile-grid">
         <section className="panel profile-card">
           <div className="profile-heading">

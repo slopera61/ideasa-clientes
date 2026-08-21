@@ -3,22 +3,26 @@ export async function apiFetch(path, options = {}) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
-  const response = await fetch(path, {
-    ...fetchOptions,
-    signal: controller.signal,
-    headers: {
-      'content-type': 'application/json',
-      ...(fetchOptions.headers || {})
-    }
-  }).catch(error => {
+  let response
+
+  try {
+    response = await fetch(path, {
+      ...fetchOptions,
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        ...(fetchOptions.headers || {})
+      }
+    })
+  } catch (error) {
     if (error.name === 'AbortError') {
       throw new Error('La solicitud tardó demasiado. Inténtalo de nuevo.')
     }
 
     throw error
-  })
-
-  clearTimeout(timeout)
+  } finally {
+    clearTimeout(timeout)
+  }
 
   const payload = await response.json().catch(() => ({}))
 
