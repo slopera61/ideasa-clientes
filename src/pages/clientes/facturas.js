@@ -137,14 +137,19 @@ export default function FacturasPage({ session }) {
   const finance = profile?.finance
 
   return (
-    <PortalLayout title='Mis facturas' session={session}>
+    <PortalLayout title='Facturas pendientes de pago' session={session}>
       <PageHeader
         eyebrow='Cartera'
-        title='Mis facturas'
-        description='Selecciona una o varias facturas para crear una orden de pago.'
+        title='Facturas pendientes de pago'
+        description='Selecciona una o varias facturas para pagar en las pasarelas de pago: Wompi o Mercado Pago.'
         actions={
           <div className='segmented-control' aria-label='Pasarela'>
             <button className={provider === 'wompi' ? 'active' : ''} type='button' onClick={() => setProvider('wompi')}>
+              <svg className='payment-provider-icon' viewBox='0 0 24 24' aria-hidden='true'>
+                <rect x='3' y='5' width='18' height='14' rx='2' />
+                <path d='M3 10h18' />
+                <path d='M7 15h3' />
+              </svg>
               Wompi
             </button>
             <button
@@ -152,6 +157,11 @@ export default function FacturasPage({ session }) {
               type='button'
               onClick={() => setProvider('mercadopago')}
             >
+              <svg className='payment-provider-icon' viewBox='0 0 24 24' aria-hidden='true'>
+                <path d='M4 7h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7Z' />
+                <path d='M16 7V5a2 2 0 0 0-2-2H5a3 3 0 0 0-3 3v1' />
+                <path d='M17 13h.01' />
+              </svg>
               Mercado Pago
             </button>
           </div>

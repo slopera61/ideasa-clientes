@@ -168,6 +168,28 @@ function aggregateFinance(rows) {
   }
 }
 
+function aggregateFinanceFromInvoices(rows) {
+  const invoices = Array.isArray(rows) ? rows : []
+  const totalDeuda = invoices.reduce((sum, row) => sum + Number(row.IMPORTE || 0), 0)
+  const cupoByAccount = invoices.reduce((groups, row) => {
+    const key = `${row.CODCLIENTE || ''}:${row.EMPRESA || ''}`
+    const cupo = Number(row.CUPO || 0)
+
+    groups[key] = Math.max(groups[key] || 0, cupo)
+
+    return groups
+  }, {})
+  const cupo = Object.values(cupoByAccount).reduce((sum, value) => sum + value, 0)
+
+  return {
+    cupo,
+    cupoDisponible: Math.max(cupo - totalDeuda, 0),
+    totalDeuda,
+    plazo: null,
+    source: 'cartera'
+  }
+}
+
 export function toInvoice(row) {
   return {
     id: `${row.EMPRESA}-${row.SERIE || 'SIN_SERIE'}-${row.NUMERO}`,
@@ -224,25 +246,36 @@ export async function getClientProfileForAccounts(accounts) {
   const codClientes = uniqueBy(safeAccounts, account => account.codCliente).map(account => account.codCliente)
   const data = await hasuraRequest(
     `
-      query GetClientProfileForAccounts($where: CLIENTES_bool_exp!, $codClientes: [Int!]) {
+      query GetClientProfileForAccounts(
+        $where: CLIENTES_bool_exp!
+        $codClientes: [Int!]
+        $invoiceWhere: CXC_EDADES_bool_exp!
+      ) {
         CLIENTES(where: $where, order_by: { EMPRESA: asc }) {
           ${CLIENT_FIELDS}
         }
         INFOCLIENTE(where: { IDCLIENTE: { _in: $codClientes } }) {
           ${INFO_FIELDS}
         }
+        CXC_EDADES(where: $invoiceWhere) {
+          CODCLIENTE
+          EMPRESA
+          IMPORTE
+          CUPO
+        }
       }
     `,
-    { where: accountWhere(safeAccounts), codClientes }
+    { where: accountWhere(safeAccounts), codClientes, invoiceWhere: invoiceWhere(safeAccounts) }
   )
 
   const clients = (data.CLIENTES || []).map(toClient).filter(Boolean)
   const finances = (data.INFOCLIENTE || []).map(toFinance).filter(Boolean)
+  const finance = finances.length > 0 ? aggregateFinance(data.INFOCLIENTE || []) : aggregateFinanceFromInvoices(data.CXC_EDADES || [])
 
   return {
     client: buildCombinedClient(clients),
     clients,
-    finance: aggregateFinance(data.INFOCLIENTE || []),
+    finance,
     finances
   }
 }

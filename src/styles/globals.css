@@ -884,6 +884,9 @@ select:focus {
 }
 
 .segmented-control button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   min-height: 42px;
   border: 0;
   background: transparent;
@@ -895,6 +898,17 @@ select:focus {
 .segmented-control button.active {
   background: var(--brand-blue);
   color: #ffffff;
+}
+
+.payment-provider-icon {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .admin-tabs {
