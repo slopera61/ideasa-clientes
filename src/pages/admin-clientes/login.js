@@ -5,6 +5,8 @@ import AuthShell from '../../components/AuthShell'
 import Notice from '../../components/Notice'
 import { apiFetch } from '../../lib/client/api'
 
+const OTP_REQUEST_TIMEOUT_MS = 45000
+
 export default function AdminLoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
@@ -23,7 +25,8 @@ export default function AdminLoginPage() {
     try {
       const payload = await apiFetch('/api/auth/request-otp', {
         method: 'POST',
-        body: JSON.stringify({ identifier: email })
+        body: JSON.stringify({ identifier: email }),
+        timeoutMs: OTP_REQUEST_TIMEOUT_MS
       })
 
       sessionStorage.setItem('ideasa_identifier', email)
@@ -61,7 +64,7 @@ export default function AdminLoginPage() {
       <Notice>{message}</Notice>
       {emailHint ? (
         <Notice>
-          El código va al correo registrado: <strong>{emailHint}</strong>.
+          El código va al correo registrado en la empresa: <strong>{emailHint}</strong>.
         </Notice>
       ) : null}
       <Notice type="error">{error}</Notice>

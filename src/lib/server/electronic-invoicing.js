@@ -381,7 +381,7 @@ async function callTheFactorySoap(method, lookup) {
   const documento = theFactoryDocumentId(lookup)
 
   if (!documento) {
-    throw new PublicInvoiceError('Indica el prefijo y consecutivo completo de la factura.')
+    throw new PublicInvoiceError('Indica el prefijo y numero de factura completo.')
   }
 
   const controller = new AbortController()
@@ -562,7 +562,7 @@ export function normalizeRegistrationRequest(body, meta = {}) {
   const telefono = compact(body?.telefono)
   const direccion = compact(body?.direccion)
 
-  if (!documento) throw new PublicInvoiceError('Indica el NIT o cedula del cliente.')
+  if (!documento) throw new PublicInvoiceError('Indica el NIT o cedula del comprador.')
   if (!nombre) throw new PublicInvoiceError('Indica el nombre o razon social.')
   if (!telefono) throw new PublicInvoiceError('Indica un telefono de contacto.')
   if (!direccion) throw new PublicInvoiceError('Indica la direccion principal.')
@@ -595,11 +595,11 @@ export function normalizeInvoiceLookup(body, { requireDocument = true } = {}) {
   const cufe = cleanText(body?.cufe).toUpperCase()
 
   if (!cufe && (!prefijo || !consecutivo)) {
-    throw new PublicInvoiceError('Indica el prefijo y consecutivo completo de la factura.')
+    throw new PublicInvoiceError('Indica el prefijo y numero de factura completo.')
   }
 
   if (requireDocument && !documento) {
-    throw new PublicInvoiceError('Indica el NIT o cedula asociado a la factura.')
+    throw new PublicInvoiceError('Indica el NIT o cedula del comprador asociado a la factura.')
   }
 
   return {

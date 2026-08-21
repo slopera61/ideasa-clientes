@@ -41,7 +41,7 @@ export default function VerificarCodigo() {
   return (
     <AuthShell title="Verificación" eyebrow="Código de acceso">
       <h2>Confirma tu identidad</h2>
-      <p className="muted">Escribe el código de seis dígitos enviado al correo registrado.</p>
+      <p className="muted">Escribe el código de seis dígitos enviado al correo registrado en la empresa.</p>
       {emailHint ? <Notice>Enviamos el código a {emailHint}.</Notice> : null}
       <form className="stacked-form" onSubmit={submit}>
         <label htmlFor="code">Código</label>

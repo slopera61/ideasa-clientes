@@ -91,7 +91,7 @@ export default function RegistroFacturacionElectronica() {
           </select>
         </label>
         <label>
-          NIT o cedula
+          NIT o cedula del comprador
           <input value={form.documento} onChange={event => updateField('documento', event.target.value)} required />
         </label>
         <label>

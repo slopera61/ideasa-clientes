@@ -13,6 +13,9 @@ const initialForm = {
   documento: ''
 }
 
+const prefijoHelp =
+  'La factura comienza con un prefijo y luego el número. Ejemplo: si la factura es PAFE12345, el prefijo es PAFE.'
+
 export default function DescargarFacturaElectronica() {
   const [form, setForm] = useState(initialForm)
   const [invoice, setInvoice] = useState(null)
@@ -49,11 +52,11 @@ export default function DescargarFacturaElectronica() {
       eyebrow="Facturacion electronica"
       layout="balanced"
       visualEyebrow="Descarga segura"
-      visualTitle="Busca tu factura por empresa, prefijo y consecutivo."
+      visualTitle="Busca tu factura por empresa, prefijo y número de factura."
       visualDescription="El portal valida la consulta desde backend antes de permitir la descarga del PDF o XML."
     >
       <h2>Descarga tu factura electronica</h2>
-      <p className="muted">Ingresa la empresa, el prefijo completo, el consecutivo y el documento del cliente.</p>
+      <p className="muted">Ingresa la empresa, el prefijo de la factura, el número de factura y el documento del comprador.</p>
 
       <form className="grid-form public-form" onSubmit={submit}>
         <label>
@@ -64,20 +67,25 @@ export default function DescargarFacturaElectronica() {
           </select>
         </label>
         <label>
-          NIT o cedula
+          NIT o cedula del comprador
           <input value={form.documento} onChange={event => updateField('documento', event.target.value)} required />
         </label>
         <label>
-          Prefijo
+          <span className="label-with-help">
+            Prefijo factura
+            <span className="field-help" tabIndex="0" aria-label={prefijoHelp} data-tooltip={prefijoHelp}>
+              ?
+            </span>
+          </span>
           <input
             value={form.prefijo}
             onChange={event => updateField('prefijo', event.target.value)}
-            placeholder="Ej. FE"
+            placeholder="Ej. PAFE"
             required
           />
         </label>
         <label>
-          Consecutivo
+          Número de factura
           <input
             value={form.consecutivo}
             onChange={event => updateField('consecutivo', event.target.value)}

@@ -139,7 +139,6 @@ export default function PerfilPage({ session }) {
                     <span className="status-pill">{valueOrNA(companyClient.empresaNombre)}</span>
                     <h3>{valueOrNA(companyClient.razonSocial || companyClient.nombre)}</h3>
                   </div>
-                  <strong>{valueOrNA(companyClient.empresa)}</strong>
                 </div>
                 <dl className="compact-details">
                   <dt>Nombre comercial</dt>
@@ -163,7 +162,11 @@ export default function PerfilPage({ session }) {
         </section>
       ) : null}
       <section className="panel">
-        <h2>Solicitar actualización</h2>
+        <h2>Solicitud de actualización</h2>
+        <p className="muted">
+          Estimado cliente, si desea realizar cambio de algo de la información, puede ponerlo acá y con gusto el
+          personal realizará el cambio.
+        </p>
         <form className="grid-form" onSubmit={submit}>
           <label>
             Correo

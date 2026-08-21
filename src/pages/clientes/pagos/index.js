@@ -29,55 +29,63 @@ export default function PagosPage({ session }) {
       <Notice type="error">{error}</Notice>
       <section className="table-surface">
         <h2>Órdenes recientes</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Referencia</th>
-              <th>Pasarela</th>
-              <th>Estado</th>
-              <th>Fecha</th>
-              <th className="right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.ordenes.map(order => (
-              <tr key={order.id}>
-                <td>{order.referencia}</td>
-                <td>{order.proveedor_preferido || '-'}</td>
-                <td>
-                  <span className="status-pill">{order.estado}</span>
-                </td>
-                <td>{formatDate(order.creado_en)}</td>
-                <td className="right">{formatCents(order.total_centavos)}</td>
+        {history.ordenes.length === 0 ? (
+          <p className="muted">No tienes órdenes de pago creadas por este medio.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Referencia</th>
+                <th>Pasarela</th>
+                <th>Estado</th>
+                <th>Fecha</th>
+                <th className="right">Total</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {history.ordenes.map(order => (
+                <tr key={order.id}>
+                  <td>{order.referencia}</td>
+                  <td>{order.proveedor_preferido || '-'}</td>
+                  <td>
+                    <span className="status-pill">{order.estado}</span>
+                  </td>
+                  <td>{formatDate(order.creado_en)}</td>
+                  <td className="right">{formatCents(order.total_centavos)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
       <section className="table-surface">
         <h2>Pagos aprobados</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Referencia</th>
-              <th>Pasarela</th>
-              <th>Transacción</th>
-              <th>Fecha</th>
-              <th className="right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.pagos.map(payment => (
-              <tr key={payment.id}>
-                <td>{payment.referencia}</td>
-                <td>{payment.proveedor}</td>
-                <td>{payment.transaccion_pasarela_id}</td>
-                <td>{formatDate(payment.confirmado_en)}</td>
-                <td className="right">{formatCents(payment.total_centavos)}</td>
+        {history.pagos.length === 0 ? (
+          <p className="muted">Lo sentimos, por este medio no ha realizado pagos.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Referencia</th>
+                <th>Pasarela</th>
+                <th>Transacción</th>
+                <th>Fecha</th>
+                <th className="right">Total</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {history.pagos.map(payment => (
+                <tr key={payment.id}>
+                  <td>{payment.referencia}</td>
+                  <td>{payment.proveedor}</td>
+                  <td>{payment.transaccion_pasarela_id}</td>
+                  <td>{formatDate(payment.confirmado_en)}</td>
+                  <td className="right">{formatCents(payment.total_centavos)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
     </PortalLayout>
   )

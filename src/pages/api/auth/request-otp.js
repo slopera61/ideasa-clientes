@@ -12,7 +12,7 @@ import {
   normalizeEmail
 } from '../../../lib/server/otp'
 
-const GENERIC_MESSAGE = 'Si encontramos un acceso asociado, enviaremos un código al correo registrado.'
+const GENERIC_MESSAGE = 'Si encontramos un acceso asociado, enviaremos un código al correo registrado en la empresa.'
 
 export default async function handler(req, res) {
   if (!allowMethods(req, res, ['POST'])) return

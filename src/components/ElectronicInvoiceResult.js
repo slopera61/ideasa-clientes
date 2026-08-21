@@ -20,7 +20,7 @@ export default function ElectronicInvoiceResult({ invoice }) {
       <dl className="detail-list">
         <dt>Cliente</dt>
         <dd>{invoice.cliente || 'Cliente IDEASA'}</dd>
-        <dt>NIT o cedula</dt>
+        <dt>NIT o cedula del comprador</dt>
         <dd>{invoice.documento || 'No disponible'}</dd>
         <dt>Fecha</dt>
         <dd>{formatDate(invoice.fecha)}</dd>
