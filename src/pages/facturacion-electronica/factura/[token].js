@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import AuthShell from '../../../components/AuthShell'
 import ElectronicInvoiceResult from '../../../components/ElectronicInvoiceResult'
 import Notice from '../../../components/Notice'
+import WhatsAppInvoiceHelp from '../../../components/WhatsAppInvoiceHelp'
 import { apiFetch } from '../../../lib/client/api'
 
 export default function FacturaQrPage() {
@@ -42,6 +43,7 @@ export default function FacturaQrPage() {
 
       {loading ? <Notice>Consultando factura...</Notice> : null}
       <Notice type="error">{error}</Notice>
+      {error ? <WhatsAppInvoiceHelp context={{ source: 'qr' }} /> : null}
       <ElectronicInvoiceResult invoice={invoice} />
 
       <Link href="/facturacion-electronica/descargar" className="secondary-button">

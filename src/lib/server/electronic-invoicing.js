@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 
 import { getEnv, isProduction, portalUrl } from './env'
+import { maskEmail } from './otp'
 
 export const ELECTRONIC_INVOICE_COMPANIES = [
   { code: '002', name: 'Pinturas Idea' },
@@ -10,6 +11,7 @@ export const ELECTRONIC_INVOICE_COMPANIES = [
 const DEFAULT_TIMEOUT_MS = 15000
 const TOKEN_VERSION = 1
 const DOWNLOAD_TOKEN_TTL_MS = 30 * 60 * 1000
+const MAX_RESEND_EMAILS = 5
 const THEFACTORY_DEFAULT_SOAP_URLS = {
   demo: 'https://demoemision21v4.thefactoryhka.com.co/ws/v1.0/Service.svc',
   production: 'https://emision21v4.thefactoryhka.com.co/ws/v1.0/Service.svc'
@@ -64,11 +66,15 @@ function validateCompany(empresa) {
 function validateEmail(email) {
   const normalized = normalizeEmail(email)
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+  if (!isValidEmail(normalized)) {
     throw new PublicInvoiceError('Indica un correo electronico valido.')
   }
 
   return normalized
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email))
 }
 
 function tokenSecret() {
@@ -338,15 +344,17 @@ function theFactoryDocumentId(lookup) {
   return normalizeDocument(lookup?.referencia || `${lookup?.prefijo || ''}${lookup?.consecutivo || ''}`)
 }
 
-function buildTheFactoryEnvelope(method, { tokenEmpresa, tokenPassword, documento }) {
+function buildTheFactoryEnvelope(method, params) {
+  const fields = Object.entries(params)
+    .map(([name, value]) => `      <tem:${name}>${xmlEscape(value)}</tem:${name}>`)
+    .join('\n')
+
   return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
   <soapenv:Header/>
   <soapenv:Body>
     <tem:${method}>
-      <tem:tokenEmpresa>${xmlEscape(tokenEmpresa)}</tem:tokenEmpresa>
-      <tem:tokenPassword>${xmlEscape(tokenPassword)}</tem:tokenPassword>
-      <tem:documento>${xmlEscape(documento)}</tem:documento>
+${fields}
     </tem:${method}>
   </soapenv:Body>
 </soapenv:Envelope>`
@@ -373,8 +381,9 @@ function parseTheFactorySoapResponse(method, xml) {
   }
 }
 
-async function callTheFactorySoap(method, lookup) {
+async function callTheFactorySoap(method, lookup, extraParams = {}, options = {}) {
   const config = theFactoryConfig(lookup.empresa)
+  const { expectDocument = true, publicErrorMessage = '', publicErrorStatus = 404 } = options
 
   if (!config.configured) return null
 
@@ -398,7 +407,8 @@ async function callTheFactorySoap(method, lookup) {
       body: buildTheFactoryEnvelope(method, {
         tokenEmpresa: config.tokenEmpresa,
         tokenPassword: config.tokenPassword,
-        documento
+        documento,
+        ...extraParams
       })
     })
     const responseText = await response.text()
@@ -410,8 +420,11 @@ async function callTheFactorySoap(method, lookup) {
     const result = parseTheFactorySoapResponse(method, responseText)
     const status = cleanText(result.resultado).toLowerCase()
 
-    if (status === 'error' || !result.documento) {
-      throw new PublicInvoiceError(result.mensaje || 'No encontramos el documento en TheFactoryHKA.', 404)
+    if (status === 'error' || (expectDocument && !result.documento)) {
+      throw new PublicInvoiceError(
+        publicErrorMessage || result.mensaje || 'No encontramos el documento en TheFactoryHKA.',
+        publicErrorStatus
+      )
     }
 
     return result
@@ -482,6 +495,44 @@ function customerNameFromXml(xml) {
   return compact(firstLocalElementValue(segment, ['RegistrationName', 'Name']))
 }
 
+function emailCandidatesFromText(value) {
+  return (
+    cleanText(value)
+      .match(/[^\s,;<>]+@[^\s,;<>]+\.[^\s,;<>]+/g) || []
+  )
+    .map(normalizeEmail)
+    .filter(isValidEmail)
+}
+
+function customerEmailFromXml(xml) {
+  const segment = customerXmlSegment(xml)
+  const candidates = [
+    ...localElementValues(segment, 'ElectronicMail'),
+    ...localElementValues(segment, 'Email'),
+    ...localElementValues(segment, 'Correo'),
+    ...localElementValues(segment, 'CorreoElectronico'),
+    ...localElementValues(segment, 'correoElectronico')
+  ].flatMap(emailCandidatesFromText)
+
+  return candidates[0] || ''
+}
+
+function normalizeResendEmails(value) {
+  const rawValues = Array.isArray(value) ? value : String(value || '').split(/[,\n;]/)
+  const emails = [...new Set(rawValues.map(normalizeEmail).filter(Boolean))]
+  const invalidEmail = emails.find(email => !isValidEmail(email))
+
+  if (!emails.length || invalidEmail) {
+    throw new PublicInvoiceError('Escribe correos validos separados por comas.')
+  }
+
+  if (emails.length > MAX_RESEND_EMAILS) {
+    throw new PublicInvoiceError(`Puedes reenviar la factura a maximo ${MAX_RESEND_EMAILS} correos.`)
+  }
+
+  return emails
+}
+
 function invoiceTotalFromXml(xml) {
   const monetaryTotal = firstLocalElementSegment(xml, 'LegalMonetaryTotal') || xml
   const rawTotal = firstLocalElementValue(monetaryTotal, 'PayableAmount').replace(',', '.')
@@ -492,6 +543,7 @@ function invoiceTotalFromXml(xml) {
 
 function mapTheFactoryXmlResponse(result, lookup, xmlText) {
   const cufe = result.cufe || firstLocalElementValue(xmlText, 'UUID') || lookup.cufe || ''
+  const customerEmail = customerEmailFromXml(xmlText)
   const normalized = {
     empresa: lookup.empresa,
     empresaNombre: lookup.empresaNombre,
@@ -506,6 +558,7 @@ function mapTheFactoryXmlResponse(result, lookup, xmlText) {
     estado: 'Disponible',
     cufe,
     facturaId: lookup.referencia,
+    emailHint: customerEmail ? maskEmail(customerEmail) : '',
     integrationPending: false
   }
   const token = signInvoiceToken({
@@ -815,5 +868,63 @@ export async function downloadElectronicInvoice({ token, formato }) {
     buffer: buildMockPdf(invoice),
     contentType: 'application/pdf',
     filename: `factura-electronica-${invoice.prefijo || ''}${invoice.consecutivo || ''}.pdf`
+  }
+}
+
+export async function resendElectronicInvoiceEmail({ token, mode = 'registered', emails = '' }) {
+  const invoice = verifyInvoiceToken(token)
+  const { v, exp, ...invoiceLookup } = invoice
+  const xmlResult = await callTheFactorySoap('DescargaXML', invoiceLookup)
+
+  if (!xmlResult) {
+    throw new PublicInvoiceError('El reenvio de facturas por TheFactoryHKA no esta configurado.', 503)
+  }
+
+  const xmlBuffer = decodeTheFactoryDocument(xmlResult.documento)
+  const xmlText = xmlBuffer.toString('utf8')
+
+  if (invoiceLookup.documento && !documentMatchesCustomerXml(xmlText, invoiceLookup.documento)) {
+    throw new PublicInvoiceError('No encontramos una factura para ese documento.', 404)
+  }
+
+  const destinationEmail = customerEmailFromXml(xmlText)
+  const sendMode = cleanText(mode).toLowerCase()
+  const destinationEmails =
+    sendMode === 'multiple' ? normalizeResendEmails(emails) : destinationEmail ? [destinationEmail] : []
+
+  if (!destinationEmails.length) {
+    throw new PublicInvoiceError('No encontramos un correo registrado en la factura para reenviarla.', 400)
+  }
+
+  const result = await callTheFactorySoap(
+    'EnvioCorreo',
+    invoiceLookup,
+    {
+      correo: destinationEmails.join(','),
+      adjuntos: cleanText(getEnv('THEFACTORY_RESEND_ADJUNTOS', '0')) || '0'
+    },
+    {
+      expectDocument: false,
+      publicErrorMessage: 'TheFactoryHKA no confirmo el reenvio de la factura.',
+      publicErrorStatus: 502
+    }
+  )
+
+  if (!result) {
+    throw new PublicInvoiceError('El reenvio de facturas por TheFactoryHKA no esta configurado.', 503)
+  }
+
+  const status = cleanText(result.resultado).toLowerCase()
+
+  if (result.codigo !== 200 && status !== 'procesado') {
+    throw new PublicInvoiceError('TheFactoryHKA no confirmo el reenvio de la factura.', 502)
+  }
+
+  return {
+    message: 'Solicitamos el reenvio de la factura electronica.',
+    emailHint: destinationEmails.length === 1 ? maskEmail(destinationEmails[0]) : '',
+    emailHints: destinationEmails.map(maskEmail),
+    codigo: result.codigo,
+    resultado: result.resultado
   }
 }

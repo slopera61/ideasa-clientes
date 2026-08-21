@@ -4,6 +4,7 @@ import { useState } from 'react'
 import AuthShell from '../../components/AuthShell'
 import ElectronicInvoiceResult from '../../components/ElectronicInvoiceResult'
 import Notice from '../../components/Notice'
+import WhatsAppInvoiceHelp from '../../components/WhatsAppInvoiceHelp'
 import { apiFetch } from '../../lib/client/api'
 
 const initialForm = {
@@ -102,6 +103,7 @@ export default function DescargarFacturaElectronica() {
       </form>
 
       <Notice type="error">{error}</Notice>
+      {error ? <WhatsAppInvoiceHelp context={form} /> : null}
       <ElectronicInvoiceResult invoice={invoice} />
     </AuthShell>
   )

@@ -564,6 +564,16 @@ select:focus {
   stroke-width: 2.2;
 }
 
+.icon-only-button {
+  width: 42px;
+  min-width: 42px;
+  padding: 0;
+}
+
+.icon-only-button .button-line-icon {
+  margin-right: 0;
+}
+
 .action-line-icon {
   width: 23px;
   height: 23px;
@@ -592,6 +602,110 @@ select:focus {
   border-color: rgba(235, 61, 71, 0.24);
   background: var(--error-soft);
   color: #b42318;
+}
+
+.whatsapp-help {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(0, 136, 189, 0.16);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  padding: 14px;
+}
+
+.whatsapp-help p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.whatsapp-help-button {
+  width: fit-content;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(22, 29, 48, 0.46);
+  padding: 20px;
+}
+
+.modal-card {
+  width: min(100%, 620px);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  border: 1px solid rgba(var(--main-channel), 0.12);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(var(--shadow-channel), 0.34);
+  padding: 22px;
+}
+
+.modal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.modal-heading h3 {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 1.35rem;
+}
+
+.resend-dialog {
+  display: grid;
+  gap: 16px;
+}
+
+.resend-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.resend-mode-card {
+  display: flex;
+  min-height: 92px;
+  gap: 12px;
+  align-items: flex-start;
+  border: 1px solid rgba(var(--main-channel), 0.12);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--ink);
+  padding: 14px;
+  text-align: left;
+}
+
+.resend-mode-card.active {
+  border-color: rgba(0, 136, 189, 0.42);
+  background: var(--info-soft);
+  box-shadow: 0 0 0 3px rgba(0, 136, 189, 0.08);
+}
+
+.resend-mode-card .button-line-icon {
+  margin-top: 2px;
+  color: var(--brand-blue-dark);
+}
+
+.resend-mode-card span {
+  display: grid;
+  gap: 5px;
+}
+
+.resend-mode-card small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.modal-actions {
+  margin-top: 2px;
 }
 
 .request-progress {
@@ -1412,6 +1526,10 @@ pre {
   }
 
   .public-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .resend-mode-grid {
     grid-template-columns: 1fr;
   }
 
